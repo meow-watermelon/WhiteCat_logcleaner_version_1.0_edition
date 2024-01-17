@@ -34,7 +34,6 @@
  * Pashkela - with apache log files
  * Hui Li - reformat and bug fix
  */ 
-#define DEBUG
 #include <stdio.h>
 #include <sys/param.h>
 #include <stdint.h>
@@ -55,6 +54,7 @@
 #include <utmpx.h>
 #include <lastlog.h>
 #endif 
+
 /* APACHE access & error logs paths*/
 char *APACHE_PATH[]=
 {
@@ -111,6 +111,7 @@ char *APACHE_PATH[]=
     "/var/log/error_log",
     "/var/log/error.log"
 };
+
 /* SOLARIS */
 #ifdef SUNOS
  #ifndef LASTLOG_FILE
@@ -120,6 +121,7 @@ char *APACHE_PATH[]=
    #define BTMPX_FILE "/var/adm/btmpx"
  #endif
 #else
+
 /* Linux, FreeBSD */
  #ifndef UTMP_FILE
    #ifndef _PATH_UTMP
@@ -150,12 +152,14 @@ char *APACHE_PATH[]=
   #endif
 #endif
 #endif
+
 //modify parametrs as in your box ;)
 #ifdef SUNOS
   #define SYSLOG_FILE "/var/log/syslog"
 #else
   #define SYSLOG_FILE "/var/log/messages"
 #endif
+
 #define SECURE_FILE "/var/log/secure"
 #define MAXBUFF 8*1024
 #define PROGRAM_NAME "WhiteCat logcleaner"
@@ -163,27 +167,28 @@ char *APACHE_PATH[]=
 #define PROGRAM_RELEASE 1
 #define AUTHORS "Shad0S [Hell Knights Crew]"
 
-char *myname; /* for error messages */
+char *myname; /* program name */
 int do_ignorecase = 0; /* -i option: ignore case */
 int do_extended = 0; /* -E option: use extended RE's */
 int do_username = 0;
 int do_hostname = 0;
 int do_tty = 0;
 int errors = 0; /* number of errors */
+
 /* patterns to match */
 regex_t username;
 regex_t hostname;
 regex_t tty;
 
-int copy_tmp(char *dstfilename, char *tmpfilename);
-int clear_textlog(char *filename);
-int clear_uwbtmp(char *filename);
-int clear_lastlog (char *filename);
-regex_t compile_pattern(const char *pat);
-int process_regexp(regex_t *pattern, char *buf, size_t size);
-char *xgethostname(void);
-void usage(void);
-void version(void);
+static int copy_tmp(char *dstfilename, char *tmpfilename);
+static int clear_textlog(char *filename);
+static int clear_uwbtmp(char *filename);
+static int clear_lastlog (char *filename);
+static regex_t compile_pattern(const char *pat);
+static int process_regexp(regex_t *pattern, char *buf, size_t size);
+static char *xgethostname(void);
+static void usage(void);
+static void version(void);
 
 int main(int argc, char *argv[]){
     myname = argv[0];
@@ -209,22 +214,29 @@ int main(int argc, char *argv[]){
         version();
         usage();
     }
-    while ((c=getopt_long(argc,argv,"u:t:a:reihVW;",longopts,NULL)) != -1) {
+
+    while ((c = getopt_long(argc, argv, "u:t:a:reihVW;", longopts, NULL)) != -1) {
       switch (c) {
        case 'u':
         username = compile_pattern(optarg);
-        if (errors) usage(); //compile failed
-         do_username=1;
+        if (errors) {
+            usage(); //compile failed
+        }
+        do_username=1;
         break;
        case 't':
         tty = compile_pattern(optarg);
-        if (errors) usage(); //compile failed
-         do_tty=1;
+        if (errors) {
+            usage(); //compile failed
+        }
+        do_tty=1;
         break;
        case 'a':
         hostname = compile_pattern(optarg);
-        if (errors) usage(); //compile failed
-         do_hostname=1; 
+        if (errors) {
+            usage(); //compile failed
+        }
+        do_hostname=1; 
         break;
        case 'e':
         do_extended = 1;
@@ -253,7 +265,7 @@ int main(int argc, char *argv[]){
        } 
     }
     //sanity check
-    if (!do_username && !do_tty && !do_hostname){
+    if (!do_username && !do_tty && !do_hostname) {
        fprintf(stderr, "%s: did not found any parameter to clean (username, hostname, tty)!\n", myname);
        usage();
     } 
@@ -261,31 +273,50 @@ int main(int argc, char *argv[]){
     version();
 
 #ifdef SUNOS
-    if (!clear_uwbtmp(UTMPX_FILE))
+    if (!clear_uwbtmp(UTMPX_FILE)) {
         printf("\033[1mutmp cleaning \t\t\t\t\t\t\t \033[32;1m[ OK ] \033[0m\n");
-    if (!clear_uwbtmp(WTMPX_FILE))
+    }
+
+    if (!clear_uwbtmp(WTMPX_FILE)) {
         printf("\033[1mwtmp cleaning \t\t\t\t\t\t\t \033[32;1m[ OK ] \033[0m\n");
+    }
+
     /* we able to get file attributes, so BTMPX_FILE obviously exists */
-    if (stat(BTMPX_FILE, &statbuf) == 0) 
-        if (!clear_uwbtmp(BTMPX_FILE))
+    if (stat(BTMPX_FILE, &statbuf) == 0) {
+        if (!clear_uwbtmp(BTMPX_FILE)) {
             printf("\033[1mbtmp cleaning \t\t\t\t\t\t\t \033[32;1m[ OK ] \033[0m\n");
+        }
+    }
 #else 
-    if (!clear_uwbtmp(UTMP_FILE))
+    if (!clear_uwbtmp(UTMP_FILE)) {
         printf("\033[1mutmp cleaning \t\t\t\t\t\t\t \033[32;1m[ OK ] \033[0m\n");
-    if (!clear_uwbtmp(WTMP_FILE))
+    }
+
+    if (!clear_uwbtmp(WTMP_FILE)) {
         printf("\033[1mwtmp cleaning \t\t\t\t\t\t\t \033[32;1m[ OK ] \033[0m\n");
+    }
+
     /* we able to get file attributes, so BTMP_FILE obviously exists */
-    if (stat(BTMP_FILE, &statbuf) == 0)
-        if (!clear_uwbtmp(BTMP_FILE))
+    if (stat(BTMP_FILE, &statbuf) == 0) {
+        if (!clear_uwbtmp(BTMP_FILE)) {
             printf("\033[1mbtmp cleaning \t\t\t\t\t\t\t \033[32;1m[ OK ] \033[0m\n");
+        }
+    }
 #endif
-    if (!clear_lastlog(LASTLOG_FILE))
+    if (!clear_lastlog(LASTLOG_FILE)) {
         printf("\033[1mlastlog cleaning \t\t\t\t\t\t \033[32;1m[ OK ] \033[0m\n");
-    if (!clear_textlog(SYSLOG_FILE))
+    }
+
+    if (!clear_textlog(SYSLOG_FILE)) {
         printf("\033[1msyslog cleaning \t\t\t\t\t\t \033[32;1m[ OK ] \033[0m\n");
-    if (stat(SECURE_FILE, &statbuf) == 0) //we able to get file attributes, so SECURE_FILE obviously exists
-        if (!clear_textlog(SECURE_FILE))
+    }
+
+    if (stat(SECURE_FILE, &statbuf) == 0) {
+         //we able to get file attributes, so SECURE_FILE obviously exists
+        if (!clear_textlog(SECURE_FILE)) {
             printf("\033[1msecure cleaning \t\t\t\t\t\t \033[32;1m[ OK ] \033[0m\n");
+        }
+    }
 
     /* APACHE LOGS */
     int size_apache_log_array = sizeof(APACHE_PATH) / sizeof(APACHE_PATH[0]);
@@ -302,16 +333,17 @@ int main(int argc, char *argv[]){
 }
 
 /* replace logfile with tempfile */
-int copy_tmp(char *dstfilename, char *tmpfilename) {
+static int copy_tmp(char *dstfilename, char *tmpfilename) {
     char buffer[BUFSIZ];
     
     sprintf(buffer, "cat %s > %s", tmpfilename, dstfilename);
+
 #ifdef DEBUG
     printf("copy_tmp buffer %s\n", buffer);
 #endif
     
     if (system(buffer) < 0) {
-        perror("Error copying from tempfile");
+        fprintf(stderr, "Error copying from tempfile: %s => %s\n", dstfilename, tmpfilename);
         return -1;
     }
     unlink(tmpfilename);
@@ -320,9 +352,8 @@ int copy_tmp(char *dstfilename, char *tmpfilename) {
     return 0;
 }
 
-
 /* cleanup plaintext logfiles */
-int clear_textlog(char *filename) {
+static int clear_textlog(char *filename) {
     char buftmp[MAXBUFF];
     FILE *fd;
     int fdtmp;
@@ -408,7 +439,7 @@ int clear_textlog(char *filename) {
 }
 
 /* cleanup binary log entries */
-int clear_uwbtmp(char *filename) {
+static int clear_uwbtmp(char *filename) {
 #ifndef SUNOS
     struct utmp entry;
 #else
@@ -486,7 +517,7 @@ int clear_uwbtmp(char *filename) {
 }
 
 /* cleanup lastlog binary file with holes */
-int clear_lastlog (char *filename) {
+static int clear_lastlog (char *filename) {
     struct passwd *pwd;
     struct lastlog entry;
     int uid = 0;
@@ -551,10 +582,8 @@ int clear_lastlog (char *filename) {
     return (errors != 0);
 }
 
-
-
 /* compile the regex pattern */
-regex_t compile_pattern(const char *pat) {
+static regex_t compile_pattern(const char *pat) {
     int flags = REG_NOSUB; /* don't need where-matched info */
     int ret;
     regex_t pattern;
@@ -579,7 +608,7 @@ regex_t compile_pattern(const char *pat) {
 }
 
 /* process regular expression */
-int process_regexp(regex_t *pattern, char *buf, size_t size) {
+static int process_regexp(regex_t *pattern, char *buf, size_t size) {
     char error[MSGBUFSIZE];
     int ret;
 
@@ -604,7 +633,7 @@ int process_regexp(regex_t *pattern, char *buf, size_t size) {
 /* Return the current hostname in malloc'd storage.
 If malloc fails, exit.
 Upon any other failure, return NULL and set errno. */
-char *xgethostname(void) {
+static char *xgethostname(void) {
     char *hostname = NULL;
     size_t size = INITIAL_HOSTNAME_LENGTH;
 
@@ -641,7 +670,7 @@ char *xgethostname(void) {
 }
 
 /* print usage message and exit with 0x48k status */
-void usage(void) {
+static void usage(void) {
     printf("Usage:\n");
     printf("\t %s [-u user] [-t tty] [-a hostname|ipaddr] [OPTIONS]\n", myname);
     printf("OPTIONS:\n");
@@ -654,7 +683,7 @@ void usage(void) {
 }
 
 /* print version information */
-void version(void) {
+static void version(void) {
     fprintf(stdout, "\t ==========================================================================================================\n"); 
     fprintf(stdout, "\t = \033[1m%s %1.1f.%d by %s, 2007.\033[0m =\n", 
         PROGRAM_NAME, PROGRAM_VERSION, PROGRAM_RELEASE, AUTHORS "[Pashkela edition for rdot.org] [Hui Li]");
