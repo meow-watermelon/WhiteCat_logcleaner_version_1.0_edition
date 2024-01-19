@@ -374,6 +374,9 @@ static int clear_textlog(char *filename) {
                 fprintf(stdout, "%s: warning: local hostname (%s) is like the username string!\n", myname, localhostname);
             }
         }
+
+        free(localhostname);
+        localhostname = NULL;
     }
 
     if ((fd = fopen(filename, "r")) == 0) {
