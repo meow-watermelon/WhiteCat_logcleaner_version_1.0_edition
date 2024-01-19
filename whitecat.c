@@ -46,7 +46,7 @@
 #include <pwd.h>
 #include <string.h>
 #include <regex.h>
-#include <limits.h> /* for PATH_MAX */
+#include <limits.h> /* for PATH_MAX and HOST_NAME_MAX */
 #include <getopt.h>
 #include <locale.h>
 #include <utmp.h>
@@ -161,7 +161,7 @@ char *APACHE_PATH[]=
 #endif
 
 #define SECURE_FILE "/var/log/secure"
-#define MAXBUFF 8*1024
+#define MAXBUFF 8 * 1024
 #define PROGRAM_NAME "WhiteCat logcleaner"
 #define PROGRAM_VERSION 1.1
 #define PROGRAM_RELEASE 1
@@ -416,6 +416,7 @@ static int clear_textlog(char *filename) {
 
         found = 0;
     }
+
     if ((rcnt < 0) && (errno != EXIT_SUCCESS)) {
         fprintf(stderr, "%s: %s: read error: %s\n", myname, filename, strerror(errno));
         errors++;
@@ -423,7 +424,7 @@ static int clear_textlog(char *filename) {
     if (fd != 0) {
         if (fclose(fd) < 0) {
             fprintf(stderr, "%s: %s: close error: %s\n", myname, filename, strerror(errno));
-        errors++;
+            errors++;
         }
     }
     if (fdtmp != 0) {
@@ -626,45 +627,32 @@ static int process_regexp(regex_t *pattern, char *buf, size_t size) {
     }
 }
 
-#ifndef INITIAL_HOSTNAME_LENGTH
-# define INITIAL_HOSTNAME_LENGTH 34
-#endif
-
-/* Return the current hostname in malloc'd storage.
-If malloc fails, exit.
-Upon any other failure, return NULL and set errno. */
+/* Return the current hostname */
 static char *xgethostname(void) {
-    char *hostname = NULL;
-    size_t size = INITIAL_HOSTNAME_LENGTH;
+    int r;
+    char *hostname = (char *)malloc(HOST_NAME_MAX + 1);
 
-    while(1) {
-        /* Use SIZE_1 here rather than SIZE to work around the bug in
-        SunOS 5.5's gethostname whereby it NUL-terminates HOSTNAME
-        even when the name is as long as the supplied buffer. */
-        size_t size_1;
-
-        hostname = realloc(hostname, size);
-        if (hostname == NULL) {
-            perror("failed to realloc hostname");
-            break;
-        }
-
-        size_1 = size - 1;
-        hostname[size_1 - 1] = '\0';
-        errno = 0;
-
-        if (gethostname(hostname, size_1) == 0) {
-            if (!hostname[size_1 - 1]) {
-                break;
-            }
-        } else if (errno != 0 && errno != ENAMETOOLONG && errno != EINVAL && errno != ENOMEM) {
-            int saved_errno = errno;
-            free(hostname);
-            hostname = NULL;
-            errno = saved_errno;
-            return NULL;
-        }
+    if (hostname == NULL) {
+        perror("hostname memory allocation is failed");
+        return NULL;
     }
+
+    r = gethostname(hostname, HOST_NAME_MAX);
+    if (r == -1) {
+        perror("failed on gethostname");
+        return NULL;
+    }
+
+    char *realloc_hostname = (char *)realloc(hostname, strlen(hostname) + 1);
+    if (realloc_hostname != NULL) {
+        hostname = realloc_hostname;
+    } else {
+        fprintf(stderr, "failed to realloc memory for hostname, skipped\n");
+    }
+
+#ifdef DEBUG
+    printf("hostname: %s\n", hostname);
+#endif
 
     return hostname;
 }
