@@ -367,6 +367,10 @@ int main(int argc, char *argv[]){
     tty_regex = NULL;
     hostname_regex = NULL;
 
+#ifdef DEBUG
+    printf("total errors: %d\n", errors);
+#endif
+
     return 0;
 }
 
