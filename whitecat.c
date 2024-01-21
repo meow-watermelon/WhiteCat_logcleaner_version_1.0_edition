@@ -421,7 +421,7 @@ static int clear_textlog(char *filename) {
         localhostname = NULL;
     }
 
-    if ((fd = fopen(filename, "r")) == 0) {
+    if ((fd = fopen(filename, "r")) == NULL) {
         fprintf(stderr, "%s: could not open: %s\n", filename, strerror(errno));
         return -1;
     }
@@ -682,9 +682,11 @@ static int process_regexp(regex_t *pattern, char *buf) {
 
         return 0;
     } else {
+
 #ifdef DEBUG
     printf("regexec return error code: %d\n", ret);
 #endif
+
         return 1;
     }
 }
