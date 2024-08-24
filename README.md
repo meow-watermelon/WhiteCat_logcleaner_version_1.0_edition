@@ -1,3 +1,14 @@
+## Update
+
+This fork is what I modified on the original WhiteCat Logcleaner utility. Following enhancements / fixes are added:
+
+- Fixed memory leak issue
+- Rewrote the regular expression functions with new data structures
+- Rewrote the `xgethostname` function
+- Added the `DEBUG` macro to print more debugging information
+
+## Original README
+
 WhiteCat logcleaner version 1.0 [edition]
 
 Данная утилита предназначена для системных администраторов для:
